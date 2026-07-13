@@ -1238,15 +1238,21 @@ function OrionLib:MakeWindow(WindowConfig)
 
     local texto = WindowName.Text
     local textSize = WindowName.TextSize
-    local font = Enum.Font.Gotham
     local maxWidth = math.huge
 
-    local WindowNameTBX = TextService:GetTextSize(
-        texto,
-        textSize,
-        font,
-        Vector2.new(maxWidth, math.huge)
-    )
+	local WindowNameTBX = TextService:GetTextSize(
+		texto,
+		textSize,
+		Enum.Font.GothamBlack,
+		Vector2.new(maxWidth, math.huge)
+	)
+	local CompactWindowName = WindowConfig.Name:match("^%s*(.-)%s+[-|]%s+") or WindowConfig.Name
+	local CompactWindowNameTBX = TextService:GetTextSize(
+		CompactWindowName,
+		textSize,
+		Enum.Font.GothamBlack,
+		Vector2.new(maxWidth, math.huge)
+	)
 
 	local WindowTopBarLine = AddThemeObject(SetProps(MakeElement("Frame"), {
 		Size = UDim2.new(1, 0, 0, 1),
@@ -1298,16 +1304,26 @@ function OrionLib:MakeWindow(WindowConfig)
 		return decodedOk and data or nil
 	end
 	task.spawn(function()
-		local location = readJson("https://ipwho.is/")
-		if location and location.success ~= false and location.latitude and location.longitude then
-			if location.timezone and type(location.timezone.utc) == "string" then
+		local location = readJson("https://ipinfo.io/json")
+		local latitude, longitude
+		if location and type(location.loc) == "string" then
+			local lat, lon = location.loc:match("^([%-%.%d]+),([%-%.%d]+)$")
+			latitude, longitude = tonumber(lat), tonumber(lon)
+		end
+		if not latitude or not longitude then
+			location = readJson("https://ipwho.is/")
+			latitude = location and tonumber(location.latitude)
+			longitude = location and tonumber(location.longitude)
+		end
+		if location and location.success ~= false and latitude and longitude then
+			if type(location.timezone) == "table" and type(location.timezone.utc) == "string" then
 				local sign, hours, minutes = location.timezone.utc:match("([+-])(%d%d):?(%d%d)")
 				if sign then
 					localUtcOffset = (tonumber(hours) * 60 + tonumber(minutes)) * 60 * (sign == "-" and -1 or 1)
 				end
 			end
 			while localInfoAlive do
-				local url = string.format("https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m&temperature_unit=celsius&timezone=auto", location.latitude, location.longitude)
+				local url = string.format("https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f&current=temperature_2m&temperature_unit=celsius&timezone=auto", latitude, longitude)
 				local weather = readJson(url)
 				if weather then
 					localUtcOffset = tonumber(weather.utc_offset_seconds) or localUtcOffset
@@ -1594,6 +1610,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		if sizeTween then sizeTween:Cancel() end
 
 		if Minimized then
+			WindowName.Text = CompactWindowName
 			ResizeHandle.Visible = false
 			showMobileOpenButton()
 			MainWindow.ClipsDescendants = true
@@ -1601,7 +1618,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			MinimizeBtn.Ico.Image = "rbxassetid://7072720870"
 			TweenService:Create(ContentFadeGroup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 1}):Play()
 			sizeTween = TweenService:Create(MainWindow, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-				Size = UDim2.fromOffset(math.max(430, WindowNameTBX.X + 250), 50),
+				Size = UDim2.fromOffset(math.max(360, CompactWindowNameTBX.X + 250), 50),
 			})
 			sizeTween:Play()
 			sizeTween.Completed:Once(function()
@@ -1609,6 +1626,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				minimizeTransition = false
 			end)
 		else
+			WindowName.Text = WindowConfig.Name
 			showMobileOpenButton()
 			ContentFadeGroup.Visible = true
 			ContentFadeGroup.GroupTransparency = 1
