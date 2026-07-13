@@ -884,24 +884,24 @@ function OrionLib:MakeWindow(WindowConfig)
 		UnlockMouse(true)
 	end
 
-	local MobileOpenButton = SetChildren(SetProps(MakeElement("Button"),
-
-	{
-		BackgroundTransparency = 0,
+	local MobilePreview = false
+	local MobileOpenButton = AddThemeObject(SetChildren(SetProps(MakeElement("Button"), {
+		BackgroundTransparency = 0.08,
 		Parent = Orion,
-		Text =  "Open",
-		TextScaled = true,
-		TextSize = 14,
-		TextColor3 = Color3.new(0, 0, 0),
-		BackgroundColor = BrickColor.new(0, 0, 0),
-		TextStrokeColor3 = Color3.new(255, 255, 255),
-		TextStrokeTransparency = 0,
-		Size = UDim2.new(0.035, 0, 0.035, 0),
+		Text = "",
+		Size = UDim2.fromOffset(48, 48),
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Position = UDim2.new(0, 72, 0.5, 0),
 		Visible = false,
-		Font = Enum.Font.GothamBold
-	}), {MakeElement("Corner", 0.25), SetProps(MakeElement("AspectRatio"), {DominantAxis = 0, AspectRatio = 0.986, AspectType = 1})})
+	}), {
+		MakeElement("Corner", 0, 14),
+		AddThemeObject(SetProps(MakeElement("Stroke"), {Transparency = 0.25}), "Stroke"),
+		AddThemeObject(SetProps(MakeElement("Label", "O", 19), {
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Font = Enum.Font.GothamBold,
+		}), "Text"),
+	}), "Second")
 
 	MakeDraggable(MobileOpenButton, MobileOpenButton)
 
@@ -1368,6 +1368,10 @@ function OrionLib:MakeWindow(WindowConfig)
 	end)
 
 	local function showMobileOpenButton()
+		if MobilePreview then
+			MobileOpenButton.Visible = true
+			return
+		end
 		if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
 			if UIHidden then
 				MobileOpenButton.Visible = true
@@ -1509,6 +1513,13 @@ function OrionLib:MakeWindow(WindowConfig)
 	end
 
 	local TabFunction = {}
+	function TabFunction:SetMobilePreview(Enabled)
+		MobilePreview = Enabled == true
+		showMobileOpenButton()
+		if not MobilePreview and (not UserInputService.TouchEnabled or UserInputService.KeyboardEnabled) then
+			MobileOpenButton.Visible = false
+		end
+	end
 
 	function TabFunction:MakeTab(TabConfig)
 		TabConfig = TabConfig or {}

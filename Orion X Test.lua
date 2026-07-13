@@ -286,4 +286,22 @@ for index = 1, 12 do
 	})
 end
 
+local DeveloperTab = Window:MakeTab({
+	Name = "Developer",
+	Icon = "wrench",
+	PremiumOnly = false,
+})
+local MobileTesting = DeveloperTab:AddSection({Name = "Mobile preview"})
+MobileTesting:AddToggle({
+	Name = "Show mobile open button",
+	Default = false,
+	Callback = function(value)
+		Window:SetMobilePreview(value)
+	end,
+})
+MobileTesting:AddParagraph(
+	"Desktop-only test",
+	"Shows the mobile open button without changing device detection. Drag it and click it to test the interaction."
+)
+
 Window:AddConfigTab()
