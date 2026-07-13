@@ -21,12 +21,13 @@ local OrionLib = {
 	Flags = {},
 	Themes = {
 		Default = {
-			Main = Color3.fromRGB(25, 25, 25),
-			Second = Color3.fromRGB(32, 32, 32),
-			Stroke = Color3.fromRGB(60, 60, 60),
-			Divider = Color3.fromRGB(60, 60, 60),
-			Text = Color3.fromRGB(240, 240, 240),
-			TextDark = Color3.fromRGB(150, 150, 150)
+			Main = Color3.fromRGB(18, 18, 21),
+			Second = Color3.fromRGB(25, 25, 29),
+			Stroke = Color3.fromRGB(52, 52, 60),
+			Divider = Color3.fromRGB(35, 35, 41),
+			Text = Color3.fromRGB(238, 238, 242),
+			TextDark = Color3.fromRGB(145, 145, 156),
+			Accent = Color3.fromRGB(103, 132, 255)
 		},
 	},
 	Toggles = {},
@@ -735,11 +736,13 @@ function OrionLib:GoToTab(tabName)
 
 		if name == tabName then
 			tabFrame.Title.Font = Enum.Font.GothamBlack
+			TweenService:Create(tabFrame.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
 			TweenService:Create(tabFrame.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
 			TweenService:Create(tabFrame.Title, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
 			container.Visible = true
 		else
 			tabFrame.Title.Font = Enum.Font.GothamSemibold
+			TweenService:Create(tabFrame.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
 			TweenService:Create(tabFrame.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {ImageTransparency = 0.4}):Play()
 			TweenService:Create(tabFrame.Title, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0.4}):Play()
 			data.Container.Visible = false
@@ -914,8 +917,9 @@ function OrionLib:MakeWindow(WindowConfig)
 	GlobalSearch.Size = UDim2.new(1, -20, 0, 32)
 	GlobalSearch.Position = UDim2.new(0, 10, 0, 10)
 	GlobalSearch.TextColor3 = Color3.fromRGB(255, 255, 255)
-	GlobalSearch.TextSize = 14
-	GlobalSearch.Font = Enum.Font.Gotham
+	GlobalSearch.TextSize = 13
+	GlobalSearch.Font = Enum.Font.GothamMedium
+	GlobalSearch.BackgroundTransparency = 0.25
 	GlobalSearch.BorderSizePixel = 0
 	GlobalSearch.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -995,7 +999,25 @@ function OrionLib:MakeWindow(WindowConfig)
 		searchDirty = false
 	end
 
+	local activeSearchLabel
+	local activeSearchStroke
+	local searchHighlightToken = 0
+
+	local function clearSearchHighlight()
+		searchHighlightToken += 1
+		local theme = OrionLib.Themes[OrionLib.SelectedTheme]
+		if activeSearchLabel and activeSearchLabel.Parent then activeSearchLabel.TextColor3 = theme.Text end
+		if activeSearchStroke and activeSearchStroke.Parent then
+			activeSearchStroke.Color = theme.Stroke
+			activeSearchStroke.Thickness = 1
+		end
+		activeSearchLabel = nil
+		activeSearchStroke = nil
+	end
+
 	local function animateSearchResult(label)
+		clearSearchHighlight()
+		local token = searchHighlightToken
 		local frame = label.Parent
 		if not frame or not frame:IsA("GuiObject") then return end
 		local theme = OrionLib.Themes[OrionLib.SelectedTheme]
@@ -1007,18 +1029,24 @@ function OrionLib:MakeWindow(WindowConfig)
 		grow.Completed:Once(function()
 			TweenService:Create(scale, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Scale=1}):Play()
 		end)
-		local originalTextColor = label.TextColor3
+		activeSearchLabel = label
 		TweenService:Create(label, TweenInfo.new(0.16), {TextColor3=highlightColor}):Play()
 		task.delay(0.35, function()
-			if label.Parent then TweenService:Create(label, TweenInfo.new(0.2), {TextColor3=originalTextColor}):Play() end
+			if token == searchHighlightToken and label.Parent then
+				TweenService:Create(label, TweenInfo.new(0.2), {TextColor3=OrionLib.Themes[OrionLib.SelectedTheme].Text}):Play()
+				activeSearchLabel = nil
+			end
 		end)
 		local stroke = frame:FindFirstChildOfClass("UIStroke")
 		if not stroke then return end
-		local thickness, color = stroke.Thickness, stroke.Color
+		activeSearchStroke = stroke
 		stroke.Color = highlightColor
 		TweenService:Create(stroke, TweenInfo.new(0.18), {Thickness=3}):Play()
 		task.delay(0.35, function()
-			if stroke.Parent then TweenService:Create(stroke, TweenInfo.new(0.2), {Thickness=thickness, Color=color}):Play() end
+			if token == searchHighlightToken and stroke.Parent then
+				TweenService:Create(stroke, TweenInfo.new(0.2), {Thickness=1, Color=OrionLib.Themes[OrionLib.SelectedTheme].Stroke}):Play()
+				activeSearchStroke = nil
+			end
 		end)
 	end
 
@@ -1065,6 +1093,10 @@ function OrionLib:MakeWindow(WindowConfig)
 	AddConnection(GlobalSearch:GetPropertyChangedSignal("Text"), function()
 		searchRequest += 1
 		local request, query = searchRequest, GlobalSearch.Text
+		if normalizeSearchText(query) == "" then
+			clearSearchHighlight()
+			return
+		end
 		task.delay(0.06, function()
 			if request == searchRequest and query ~= "" then OrionLib:FindAndFocusElement(query) end
 		end)
@@ -1182,28 +1214,6 @@ function OrionLib:MakeWindow(WindowConfig)
         Vector2.new(maxWidth, math.huge)
     )
 
-	task.spawn(function()
-		local textLabel = WindowName
-		local texto = WindowConfig.Name
-		local velocidade = 0.08
-
-		while true do
-			for i = 1, #texto do
-				textLabel.Text = string.sub(texto, 1, i)
-				task.wait(velocidade)
-			end
-
-			task.wait(10)
-
-			for i = #texto, 0, -1 do
-				textLabel.Text = string.sub(texto, 1, i)
-				task.wait(velocidade / 2)
-			end
-
-			task.wait(0.5)
-		end
-	end)
-
 	local WindowTopBarLine = AddThemeObject(SetProps(MakeElement("Frame"), {
 		Size = UDim2.new(1, 0, 0, 1),
 		Position = UDim2.new(0, 0, 1, -1)
@@ -1242,36 +1252,11 @@ function OrionLib:MakeWindow(WindowConfig)
 	local ExpandedSize = MainWindow.AbsoluteSize
 
 	mainWindowStroke.Parent = MainWindow
-	mainWindowStroke.Thickness = 2.5
-	mainWindowStroke.Color = Color3.fromRGB(255,255,255)
-	mainWindowStroke.Transparency = 0.1
+	mainWindowStroke.Thickness = 1
+	mainWindowStroke.Color = OrionLib.Themes[OrionLib.SelectedTheme].Stroke
+	mainWindowStroke.Transparency = 0.15
 	mainWindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-	mainWindowGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
-		ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
-		ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
-		ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0, 255, 255)),
-		ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
-		ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
-		ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0))
-	})
-
-	local tweenInfo = TweenInfo.new(
-		2,
-		Enum.EasingStyle.Linear,
-		Enum.EasingDirection.InOut,
-		-1,
-		false
-	)
-
-	local tween = TweenService:Create(
-		mainWindowGradient,
-		tweenInfo,
-		{Rotation = 360}
-	)
-
-	tween:Play()
+	mainWindowGradient.Color = createGradientFromColor(OrionLib.Themes[OrionLib.SelectedTheme].Stroke, 0.7)
 
     local window = MainWindow
 
@@ -1515,6 +1500,12 @@ function OrionLib:MakeWindow(WindowConfig)
 			Size = UDim2.new(1, 0, 0, 30),
 			Parent = TabHolder
 		}), {
+			AddThemeObject(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 1, 0), {
+				Name = "Indicator",
+				Size = UDim2.new(0, 3, 0, 16),
+				Position = UDim2.new(0, 1, 0.5, -8),
+				BackgroundTransparency = 1,
+			}), "Accent"),
 			AddThemeObject(SetProps(MakeElement("Image", TabConfig.Icon), {
 				AnchorPoint = Vector2.new(0, 0.5),
 				Size = UDim2.new(0, 18, 0, 18),
@@ -1566,6 +1557,7 @@ function OrionLib:MakeWindow(WindowConfig)
 
 		if FirstTab then
 			FirstTab = false
+			TabFrame.Indicator.BackgroundTransparency = 0
 			TabFrame.Ico.ImageTransparency = 0
 			TabFrame.Title.TextTransparency = 0
 			TabFrame.Title.Font = Enum.Font.GothamBlack
@@ -1576,6 +1568,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			for _, Tab in next, TabHolder:GetChildren() do
 				if Tab:IsA("TextButton") then
 					Tab.Title.Font = Enum.Font.GothamSemibold
+					TweenService:Create(Tab.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
 					TweenService:Create(Tab.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {ImageTransparency = 0.4}):Play()
 					TweenService:Create(Tab.Title, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0.4}):Play()
 				end
@@ -1586,6 +1579,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				end
 			end
 			TweenService:Create(TabFrame.Ico, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
+			TweenService:Create(TabFrame.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
 			TweenService:Create(TabFrame.Title, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
 			TabFrame.Title.Font = Enum.Font.GothamBlack
 			Container.Visible = true
