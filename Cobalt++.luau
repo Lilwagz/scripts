@@ -10556,6 +10556,8 @@ function CreateCallFrame(CallInfo)
 	end
 
 	local IsBlockedCall = CallInfo.Blocked == true
+	local IsHTTPS = CallInfo.Instance == wax.shared.HTTPRequestInstance
+		or CallInfo.Instance == wax.shared.HTTPResponseInstance
 	local CallFrame = Interface.New("TextButton", {
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = if IsBlockedCall then Color3.fromRGB(34, 18, 18) else Color3.fromRGB(25, 25, 25),
@@ -10719,7 +10721,7 @@ function CreateCallFrame(CallInfo)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = if IsBlockedCall then Color3.fromRGB(24, 13, 13) else Color3.fromRGB(15, 15, 15),
 		Size = UDim2.fromScale(1, 0),
-		Visible = wax.shared.GetTableLength(CallInfo.Arguments) > 0,
+		Visible = IsHTTPS or wax.shared.GetTableLength(CallInfo.Arguments) > 0,
 
 		["UIListLayout"] = {
 			Padding = UDim.new(0, 6),
@@ -10737,13 +10739,33 @@ function CreateCallFrame(CallInfo)
 		Parent = CallFrame,
 	})
 	do
-		for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
-			if Index % 15 == 0 then
-				task.wait()
+		if IsHTTPS then
+			local Code = CodeGen:BuildCallCode(CallInfo)
+			local CodeStart = string.find(Code, "local response", 1, true)
+			if CodeStart then
+				Code = string.sub(Code, CodeStart)
 			end
+			Interface.New("TextLabel", {
+				BackgroundTransparency = 1,
+				Size = UDim2.new(1, 0, 0, 72),
+				Text = Code,
+				TextColor3 = if IsBlockedCall then Color3.fromRGB(255, 190, 190) else Color3.fromRGB(190, 220, 190),
+				TextSize = 14,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				TextWrapped = false,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextYAlignment = Enum.TextYAlignment.Top,
+				Parent = ArgumentsFrame,
+			})
+		else
+			for Index = 1, wax.shared.GetTableLength(CallInfo.Arguments) do
+				if Index % 15 == 0 then
+					task.wait()
+				end
 
-			local Value = CallInfo.Arguments[Index]
-			CreateArgHolder(Index, Value, ArgumentsFrame, IsBlockedCall)
+				local Value = CallInfo.Arguments[Index]
+				CreateArgHolder(Index, Value, ArgumentsFrame, IsBlockedCall)
+			end
 		end
 	end
 
