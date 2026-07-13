@@ -1223,7 +1223,7 @@ function OrionLib:MakeWindow(WindowConfig)
 
 	local LocalInfo = AddThemeObject(SetProps(MakeElement("Label", "--:--  /  --°C", 13), {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Size = UDim2.fromOffset(132, 28),
+		Size = UDim2.fromOffset(116, 28),
 		Position = UDim2.new(1, -100, 0.5, 0),
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Font = Enum.Font.GothamSemibold,
@@ -1599,7 +1599,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			MinimizeBtn.Ico.Image = "rbxassetid://7072720870"
 			TweenService:Create(ContentFadeGroup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 1}):Play()
 			sizeTween = TweenService:Create(MainWindow, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-				Size = UDim2.fromOffset(WindowNameTBX.X + 140, 50),
+				Size = UDim2.fromOffset(math.max(430, WindowNameTBX.X + 250), 50),
 			})
 			sizeTween:Play()
 			sizeTween.Completed:Once(function()
