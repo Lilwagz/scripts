@@ -1260,6 +1260,13 @@ function OrionLib:MakeWindow(WindowConfig)
 		WindowStuff
 	}), "Main")
 	local ExpandedSize = MainWindow.AbsoluteSize
+	local ContentFadeGroup = Instance.new("CanvasGroup")
+	ContentFadeGroup.Name = "ContentFadeGroup"
+	ContentFadeGroup.Size = UDim2.fromScale(1, 1)
+	ContentFadeGroup.BackgroundTransparency = 1
+	ContentFadeGroup.GroupTransparency = 0
+	ContentFadeGroup.Parent = MainWindow
+	WindowStuff.Parent = ContentFadeGroup
 
 	mainWindowStroke.Parent = MainWindow
 	mainWindowStroke.Thickness = 1
@@ -1429,19 +1436,22 @@ function OrionLib:MakeWindow(WindowConfig)
 			MainWindow.ClipsDescendants = true
 			WindowTopBarLine.Visible = false
 			MinimizeBtn.Ico.Image = "rbxassetid://7072720870"
+			TweenService:Create(ContentFadeGroup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 1}):Play()
 			sizeTween = TweenService:Create(MainWindow, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				Size = UDim2.fromOffset(WindowNameTBX.X + 140, 50),
 			})
 			sizeTween:Play()
 			sizeTween.Completed:Once(function()
-				WindowStuff.Visible = false
+				ContentFadeGroup.Visible = false
 				minimizeTransition = false
 			end)
 		else
-			WindowStuff.Visible = true
+			ContentFadeGroup.Visible = true
+			ContentFadeGroup.GroupTransparency = 1
 			WindowTopBarLine.Visible = true
 			ResizeHandle.Visible = true
 			MinimizeBtn.Ico.Image = "rbxassetid://7072719338"
+			TweenService:Create(ContentFadeGroup, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
 			sizeTween = TweenService:Create(MainWindow, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 				Size = UDim2.fromOffset(ExpandedSize.X, ExpandedSize.Y),
 			})
@@ -1539,7 +1549,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		local Container = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", Color3.fromRGB(255, 255, 255), 5), {
 			Size = UDim2.new(1, -150, 1, -50),
 			Position = UDim2.new(0, 150, 0, 50),
-			Parent = MainWindow,
+			Parent = ContentFadeGroup,
 			Visible = false,
 			Name = "ItemContainer"
 		}), {
@@ -1583,7 +1593,7 @@ function OrionLib:MakeWindow(WindowConfig)
 					TweenService:Create(Tab.Title, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {TextTransparency = 0.4}):Play()
 				end
 			end
-			for _, ItemContainer in next, MainWindow:GetChildren() do
+			for _, ItemContainer in next, ContentFadeGroup:GetChildren() do
 				if ItemContainer.Name == "ItemContainer" then
 					ItemContainer.Visible = false
 				end
