@@ -626,29 +626,35 @@ local NotificationHolder = SetProps(SetChildren(MakeElement("TFrame"), {
 })
 
 function OrionLib:GenTheme(mainColor)
-    local r, g, b = mainColor.R * 255, mainColor.G * 255, mainColor.B * 255
-    local lum = 0.299 * r + 0.587 * g + 0.114 * b
-    local dark = lum < 128
+	local function mix(a, b, amount)
+		return Color3.new(
+			a.R + (b.R - a.R) * amount,
+			a.G + (b.G - a.G) * amount,
+			a.B + (b.B - a.B) * amount
+		)
+	end
+	local lum = 0.2126 * mainColor.R + 0.7152 * mainColor.G + 0.0722 * mainColor.B
+	local dark = lum < 0.5
 	local h, s, v = mainColor:ToHSV()
-    local t = {Main = mainColor}
+	local t = {Main = mainColor}
 
-    if dark then
-		t.Second = lighterHSV(mainColor, 0.06)
-		t.Stroke = lighterHSV(mainColor, 0.16)
-		t.Divider = lighterHSV(mainColor, 0.1)
-        t.Text = Color3.fromRGB(240, 240, 242)
-        t.TextDark = Color3.fromRGB(155, 155, 160)
-		t.Accent = s < 0.12 and Color3.fromRGB(103, 132, 255) or Color3.fromHSV(h, math.max(s, 0.55), math.max(v, 0.78))
-    else
-        t.Second = Color3.fromRGB(math.clamp(r * 0.94, 0, 255), math.clamp(g * 0.94, 0, 255), math.clamp(b * 0.94, 0, 255))
-        t.Stroke = Color3.fromRGB(math.clamp(r * 0.75, 0, 255), math.clamp(g * 0.75, 0, 255), math.clamp(b * 0.75, 0, 255))
-        t.Divider = Color3.fromRGB(math.clamp(r * 0.85, 0, 255), math.clamp(g * 0.85, 0, 255), math.clamp(b * 0.85, 0, 255))
-        t.Text = Color3.fromRGB(35, 35, 38)
-        t.TextDark = Color3.fromRGB(110, 110, 115)
-        t.Accent = Color3.fromRGB(math.clamp(r * 0.72, 0, 255), math.clamp(g * 0.72, 0, 255), math.clamp(b * 0.72, 0, 255))
-    end
+	if dark then
+		t.Second = mix(mainColor, Color3.new(1, 1, 1), 0.07)
+		t.Divider = mix(mainColor, Color3.new(1, 1, 1), 0.12)
+		t.Stroke = mix(mainColor, Color3.new(1, 1, 1), 0.2)
+		t.Text = Color3.fromRGB(241, 241, 245)
+		t.TextDark = Color3.fromRGB(158, 158, 168)
+		t.Accent = s < 0.16 and Color3.fromRGB(103, 132, 255) or Color3.fromHSV(h, math.clamp(s, 0.55, 0.85), math.max(v, 0.74))
+	else
+		t.Second = mix(mainColor, Color3.new(0, 0, 0), 0.04)
+		t.Divider = mix(mainColor, Color3.new(0, 0, 0), 0.09)
+		t.Stroke = mix(mainColor, Color3.new(0, 0, 0), 0.18)
+		t.Text = Color3.fromRGB(31, 31, 36)
+		t.TextDark = Color3.fromRGB(103, 103, 114)
+		t.Accent = s < 0.16 and Color3.fromRGB(72, 100, 220) or Color3.fromHSV(h, math.clamp(s, 0.5, 0.8), math.min(v, 0.62))
+	end
 
-    return t
+	return t
 end
 
 function OrionLib:MakeNotification(NotificationConfig)
@@ -912,7 +918,7 @@ function OrionLib:MakeWindow(WindowConfig)
 	end)
 
 	GlobalSearch.Name = "GlobalSearch"
-	GlobalSearch.PlaceholderText = "Search tabs and controls..."
+	GlobalSearch.PlaceholderText = "Search..."
 	GlobalSearch.Text = ""
 	GlobalSearch.ClearTextOnFocus = false
 	GlobalSearch.Size = UDim2.new(1, -20, 0, 32)
@@ -923,6 +929,8 @@ function OrionLib:MakeWindow(WindowConfig)
 	GlobalSearch.BackgroundTransparency = 0.25
 	GlobalSearch.BorderSizePixel = 0
 	GlobalSearch.TextXAlignment = Enum.TextXAlignment.Left
+	GlobalSearch.ClipsDescendants = true
+	GlobalSearch.TextTruncate = Enum.TextTruncate.AtEnd
 
 	function CSBC(baseColor)
 		local newTheme = OrionLib:GenTheme(baseColor)
@@ -932,7 +940,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		GlobalSearch.BackgroundColor3 = newTheme.Main
 	end
 
-	SetChildren(GlobalSearch, {MakeElement("Padding", 0,10,0,0), MakeElement("Corner", 0.35, 0)})
+	SetChildren(GlobalSearch, {MakeElement("Padding", 0, 10, 30, 0), MakeElement("Corner", 0.35, 0)})
 
 	local Icon = Instance.new("ImageLabel")
 	Icon.Image = "rbxassetid://7072717695"
@@ -1288,7 +1296,7 @@ function OrionLib:MakeWindow(WindowConfig)
     local startSize
 	local lastResizeUpdate = 0
 	local lastAppliedSize
-	local RESIZE_INTERVAL = 1 / 30
+	local RESIZE_INTERVAL = 1 / 60
 
 	local function updateResize(force)
 		if not resizing or Minimized then return end
@@ -1299,7 +1307,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			math.floor(math.clamp(startSize.X + delta.X, MIN_SIZE.X, MAX_SIZE.X) + 0.5),
 			math.floor(math.clamp(startSize.Y + delta.Y, MIN_SIZE.Y, MAX_SIZE.Y) + 0.5)
 		)
-		if not force and lastAppliedSize and (size - lastAppliedSize).Magnitude < 3 then return end
+		if not force and lastAppliedSize and (size - lastAppliedSize).Magnitude < 1 then return end
 		lastResizeUpdate = now
 		lastAppliedSize = size
 		ExpandedSize = size
