@@ -1218,7 +1218,8 @@ function OrionLib:MakeWindow(WindowConfig)
 		Size = UDim2.new(1, -245, 2, 0),
 		Position = UDim2.new(0, 25, 0, -24),
 		Font = Enum.Font.GothamBlack,
-		TextSize = 20
+		TextSize = 20,
+		TextTruncate = Enum.TextTruncate.AtEnd
 	}), "Text")
 
 	local LocalInfo = AddThemeObject(SetProps(MakeElement("Label", "--:--  /  --°C", 13), {
@@ -1228,6 +1229,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Font = Enum.Font.GothamSemibold,
 		TextTransparency = 0.12,
+		ZIndex = 3,
 	}), "Text")
 
     task.wait(0.1)
