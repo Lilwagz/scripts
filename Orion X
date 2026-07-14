@@ -332,6 +332,31 @@ local Total = {
 	AddThemeObject = 0;
 }
 
+-- Visual controls exposed in the UI Config tab.
+-- Visibility uses 0-100: 0 = invisible, 100 = fully visible.
+local VisualPreferences = {
+	StrokeVisibility = 0,
+	SeparatorVisibility = 0,
+	KeystrokeBackgroundVisibility = 0,
+}
+OrionLib.VisualPreferences = VisualPreferences
+
+local function VisibilityToTransparency(Value)
+	return 1 - (math.clamp(tonumber(Value) or 0, 0, 100) / 100)
+end
+
+local function ApplyVisualPreferenceToObject(Object, Type)
+	if not Object then return end
+	if Type == "Stroke" then
+		if Object:IsA("UIStroke") then
+			Object.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
+		elseif Object:IsA("Frame") then
+			-- Frames registered as Stroke are the one-pixel separator lines.
+			Object.BackgroundTransparency = VisibilityToTransparency(VisualPreferences.SeparatorVisibility)
+		end
+	end
+end
+
 function AddThemeObject(Object, Type)
     if not OrionLib.ThemeObjects[Type] then
         OrionLib.ThemeObjects[Type] = {}
@@ -347,6 +372,7 @@ function AddThemeObject(Object, Type)
         Object[property] = themeColor
     end
 
+    ApplyVisualPreferenceToObject(Object, Type)
     return Object
 end
 
@@ -413,6 +439,19 @@ end
 mainWindowStroke = Instance.new("UIStroke")
 local mainWindowGradient = Instance.new("UIGradient", mainWindowStroke)
 
+local function ApplyVisualPreferences()
+	local strokeObjects = OrionLib.ThemeObjects.Stroke or {}
+	for _, Object in ipairs(strokeObjects) do
+		if Object and Object.Parent then
+			ApplyVisualPreferenceToObject(Object, "Stroke")
+		end
+	end
+
+	if mainWindowStroke then
+		mainWindowStroke.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
+	end
+end
+
 function OrionLib:SetTheme()
 	local themeData = self.Themes[self.SelectedTheme]
 	if not themeData then return end
@@ -451,7 +490,12 @@ function OrionLib:SetTheme()
 	for _, key in ipairs(self.Keystrokes) do
 		if key.Frame and key.Frame.Parent then
 			key.Frame.BackgroundColor3 = key.Pressed and themeData.Accent or themeData.Second
+			key.Frame.BackgroundTransparency = VisibilityToTransparency(VisualPreferences.KeystrokeBackgroundVisibility)
 			key.Stroke.Color = key.Pressed and themeData.Accent or themeData.Stroke
+			key.Stroke.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
+			if key.Label then
+				key.Label.TextColor3 = key.Pressed and themeData.Accent or themeData.Text
+			end
 		end
 	end
 
@@ -473,6 +517,7 @@ function OrionLib:SetTheme()
 		GlobalSearch.BackgroundColor3 = themeData.Main
 	end
 
+	ApplyVisualPreferences()
 	OrionLib:SaveThemeCfg()
 end
 
@@ -881,6 +926,14 @@ function OrionLib:MakeWindow(WindowConfig)
 	local UIHidden = false
 	local IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
+	-- Independent horizontal resizing for the left sidebar.
+	local SIDEBAR_MIN_WIDTH = 54
+	local SIDEBAR_DEFAULT_WIDTH = 150
+	local SIDEBAR_MAX_WIDTH = 320
+	local SIDEBAR_COLLAPSE_THRESHOLD = 96
+	local MIN_CONTENT_WIDTH = 220
+	local SidebarWidth = SIDEBAR_DEFAULT_WIDTH
+
 	WindowConfig = WindowConfig or {}
 	WindowConfig.Name = WindowConfig.Name or "Orion Library"
 	WindowConfig.ConfigFolder = WindowConfig.ConfigFolder or WindowConfig.Name
@@ -901,6 +954,7 @@ function OrionLib:MakeWindow(WindowConfig)
 	WindowConfig.SearchBar = WindowConfig.SearchBar ~= false
 	WindowConfig.RichName = WindowConfig.RichName or nil
 	WindowConfig.IconColorChange = WindowConfig.IconColorChange or false
+	SidebarWidth = math.clamp(tonumber(WindowConfig.SidebarWidth) or SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
 	OrionLib.Folder = WindowConfig.ConfigFolder
 	OrionLib.SaveCfg = WindowConfig.SaveConfig
 	OrionLib.FreeMouse = WindowConfig.FreeMouse
@@ -1173,7 +1227,8 @@ function OrionLib:MakeWindow(WindowConfig)
 	})
 
 	local WindowStuff = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), {
-		Size = UDim2.new(0, 150, 1, -50),
+		Name = "Sidebar",
+		Size = UDim2.new(0, SidebarWidth, 1, -50),
 		Position = UDim2.new(0, 0, 0, 50)
 	}), {
 		AddThemeObject(SetProps(MakeElement("Frame"), {
@@ -1191,13 +1246,13 @@ function OrionLib:MakeWindow(WindowConfig)
 		TabHolder,
 		GlobalSearch,
 		SetChildren(SetProps(MakeElement("TFrame"), {
+			Name = "ProfileFooter",
 			Size = UDim2.new(1, 0, 0, 50),
 			Position = UDim2.new(0, 0, 1, -50)
 		}), {
-			AddThemeObject(SetProps(MakeElement("Frame"), {
-				Size = UDim2.new(1, 0, 0, 1)
-			}), "Stroke"),
+			-- No horizontal separator above the profile footer.
 			AddThemeObject(SetChildren(SetProps(MakeElement("Frame"), {
+				Name = "ProfileAvatar",
 				AnchorPoint = Vector2.new(0, 0.5),
 				Size = UDim2.new(0, 32, 0, 32),
 				Position = UDim2.new(0, 10, 0.5, 0)
@@ -1211,6 +1266,7 @@ function OrionLib:MakeWindow(WindowConfig)
 				MakeElement("Corner", 1)
 			}), "Divider"),
 			SetChildren(SetProps(MakeElement("TFrame"), {
+				Name = "ProfileAvatarOutline",
 				AnchorPoint = Vector2.new(0, 0.5),
 				Size = UDim2.new(0, 32, 0, 32),
 				Position = UDim2.new(0, 10, 0.5, 0)
@@ -1219,12 +1275,14 @@ function OrionLib:MakeWindow(WindowConfig)
 				MakeElement("Corner", 1)
 			}),
 			AddThemeObject(SetProps(MakeElement("Label", LocalPlayer.DisplayName, WindowConfig.HidePremium and 14 or 13), {
+				Name = "ProfileName",
 				Size = UDim2.new(1, -60, 0, 13),
 				Position = WindowConfig.HidePremium and UDim2.new(0, 50, 0, 19) or UDim2.new(0, 50, 0, 12),
 				Font = Enum.Font.GothamBold,
 				ClipsDescendants = true
 			}), "Text"),
 			AddThemeObject(SetProps(MakeElement("Label", "", 12), {
+				Name = "ProfilePremium",
 				Size = UDim2.new(1, -60, 0, 12),
 				Position = UDim2.new(0, 50, 1, -25),
 				Visible = not WindowConfig.HidePremium
@@ -1308,6 +1366,131 @@ function OrionLib:MakeWindow(WindowConfig)
 		DragPoint,
 		WindowStuff
 	}), "Main")
+
+	-- Small horizontal-only drag handle on the sidebar's right edge.
+	local SidebarResizeHandle = Instance.new("TextButton")
+	SidebarResizeHandle.Name = "SidebarResizeHandle"
+	SidebarResizeHandle.AnchorPoint = Vector2.new(0.5, 1)
+	SidebarResizeHandle.Size = UDim2.fromOffset(18, 38)
+	SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -56)
+	SidebarResizeHandle.BackgroundTransparency = 1
+	SidebarResizeHandle.Text = ""
+	SidebarResizeHandle.AutoButtonColor = false
+	SidebarResizeHandle.Active = true
+	SidebarResizeHandle.ZIndex = 20
+	SidebarResizeHandle.Parent = MainWindow
+
+	local SidebarResizeGlyph = AddThemeObject(SetProps(MakeElement("Label", "↔", 16), {
+		Size = UDim2.fromScale(1, 1),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextTransparency = 0.5,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 21,
+		Parent = SidebarResizeHandle,
+	}), "Text")
+
+	local SidebarCollapsed = false
+	local function getSidebarMaxWidth()
+		local available = MainWindow.AbsoluteSize.X - MIN_CONTENT_WIDTH
+		return math.max(SIDEBAR_MIN_WIDTH, math.min(SIDEBAR_MAX_WIDTH, available))
+	end
+
+	local function updateSidebarLayout()
+		SidebarWidth = math.floor(math.clamp(SidebarWidth, SIDEBAR_MIN_WIDTH, getSidebarMaxWidth()) + 0.5)
+		SidebarCollapsed = SidebarWidth <= SIDEBAR_COLLAPSE_THRESHOLD
+
+		WindowStuff.Size = UDim2.new(0, SidebarWidth, 1, -50)
+		SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -56)
+
+		if SidebarCollapsed then
+			GlobalSearch.Visible = false
+			TabHolder.Position = UDim2.new(0, 0, 0, 8)
+			TabHolder.Size = UDim2.new(1, 0, 1, -58)
+		else
+			GlobalSearch.Visible = WindowConfig.SearchBar
+			GlobalSearch.Position = UDim2.new(0, 10, 0, 10)
+			GlobalSearch.Size = UDim2.new(1, -20, 0, 32)
+			TabHolder.Position = UDim2.new(0, 0, 0, 50)
+			TabHolder.Size = UDim2.new(1, 0, 1, -100)
+		end
+
+		for _, tabName in ipairs(TabsOrder) do
+			local tabData = Tabs[tabName]
+			if tabData then
+				local tabFrame = tabData.Frame
+				if tabFrame and tabFrame.Parent then
+					if tabFrame:FindFirstChild("Title") then
+						tabFrame.Title.Visible = not SidebarCollapsed
+					end
+					if tabFrame:FindFirstChild("Ico") then
+						tabFrame.Ico.Position = SidebarCollapsed
+							and UDim2.new(0.5, -9, 0.5, 0)
+							or UDim2.new(0, 10, 0.5, 0)
+					end
+				end
+
+				local container = tabData.Container
+				if container and container.Parent then
+					container.Position = UDim2.new(0, SidebarWidth, 0, 50)
+					container.Size = UDim2.new(1, -SidebarWidth, 1, -50)
+				end
+			end
+		end
+
+		local footer = WindowStuff:FindFirstChild("ProfileFooter")
+		if footer then
+			local avatar = footer:FindFirstChild("ProfileAvatar")
+			local outline = footer:FindFirstChild("ProfileAvatarOutline")
+			local name = footer:FindFirstChild("ProfileName")
+			local premium = footer:FindFirstChild("ProfilePremium")
+			local avatarPosition = SidebarCollapsed
+				and UDim2.new(0.5, -16, 0.5, 0)
+				or UDim2.new(0, 10, 0.5, 0)
+			if avatar then avatar.Position = avatarPosition end
+			if outline then outline.Position = avatarPosition end
+			if name then name.Visible = not SidebarCollapsed end
+			if premium then premium.Visible = (not SidebarCollapsed) and (not WindowConfig.HidePremium) end
+		end
+	end
+
+	local sidebarResizing = false
+	local sidebarStartMouseX = 0
+	local sidebarStartWidth = SidebarWidth
+
+	AddConnection(SidebarResizeHandle.MouseEnter, function()
+		TweenService:Create(SidebarResizeGlyph, TweenInfo.new(0.15), {TextTransparency = 0.05}):Play()
+	end)
+	AddConnection(SidebarResizeHandle.MouseLeave, function()
+		if not sidebarResizing then
+			TweenService:Create(SidebarResizeGlyph, TweenInfo.new(0.15), {TextTransparency = 0.5}):Play()
+		end
+	end)
+	AddConnection(SidebarResizeHandle.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			sidebarResizing = true
+			sidebarStartMouseX = input.Position.X
+			sidebarStartWidth = SidebarWidth
+		end
+	end)
+	AddConnection(UserInputService.InputChanged, function(input)
+		if not sidebarResizing or Minimized then return end
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			SidebarWidth = sidebarStartWidth + (input.Position.X - sidebarStartMouseX)
+			updateSidebarLayout()
+		end
+	end)
+	AddConnection(UserInputService.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if sidebarResizing then
+				sidebarResizing = false
+				SidebarResizeGlyph.TextTransparency = 0.5
+				updateSidebarLayout()
+			end
+		end
+	end)
+
+	updateSidebarLayout()
+
 	local localUtcOffset = 0
 	local localTemperature
 	local localInfoAlive = true
@@ -1371,7 +1554,8 @@ function OrionLib:MakeWindow(WindowConfig)
 		Name = "Keystrokes",
 		Size = UDim2.fromOffset(148, 114),
 		Position = UDim2.new(1, -172, 0.5, -57),
-		BackgroundTransparency = 0.08,
+		-- The keystroke overlay itself has no solid panel background.
+		BackgroundTransparency = 1,
 		Visible = false,
 		Active = true,
 		ZIndex = 5,
@@ -1381,23 +1565,27 @@ function OrionLib:MakeWindow(WindowConfig)
 	}), "Main")
 
 	local function createKeystroke(Name, Text, Position, Size)
-		local stroke = AddThemeObject(SetProps(MakeElement("Stroke"), {Transparency = 0.35}), "Stroke")
+		local stroke = AddThemeObject(SetProps(MakeElement("Stroke"), {
+			Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
+		}), "Stroke")
+		local label = AddThemeObject(SetProps(MakeElement("Label", Text, 12), {
+			Size = UDim2.fromScale(1, 1),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			Font = Enum.Font.GothamSemibold,
+			ZIndex = 7,
+		}), "Text")
 		local frame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 6), {
 			Name = Name,
 			Size = Size,
 			Position = Position,
+			BackgroundTransparency = VisibilityToTransparency(VisualPreferences.KeystrokeBackgroundVisibility),
 			ZIndex = 6,
 			Parent = KeystrokesFrame,
 		}), {
 			stroke,
-			AddThemeObject(SetProps(MakeElement("Label", Text, 12), {
-				Size = UDim2.fromScale(1, 1),
-				TextXAlignment = Enum.TextXAlignment.Center,
-				Font = Enum.Font.GothamSemibold,
-				ZIndex = 7,
-			}), "Text"),
+			label,
 		}), "Second")
-		local item = {Frame = frame, Stroke = stroke, Pressed = false}
+		local item = {Frame = frame, Stroke = stroke, Label = label, Pressed = false}
 		table.insert(OrionLib.Keystrokes, item)
 		return item
 	end
@@ -1417,7 +1605,12 @@ function OrionLib:MakeWindow(WindowConfig)
 		item.Pressed = Pressed
 		local theme = OrionLib.Themes[OrionLib.SelectedTheme]
 		item.Frame.BackgroundColor3 = Pressed and theme.Accent or theme.Second
+		item.Frame.BackgroundTransparency = VisibilityToTransparency(VisualPreferences.KeystrokeBackgroundVisibility)
 		item.Stroke.Color = Pressed and theme.Accent or theme.Stroke
+		item.Stroke.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
+		if item.Label then
+			item.Label.TextColor3 = Pressed and theme.Accent or theme.Text
+		end
 	end
 
 	AddConnection(UserInputService.InputBegan, function(Input)
@@ -1453,9 +1646,10 @@ function OrionLib:MakeWindow(WindowConfig)
 	mainWindowStroke.Parent = MainWindow
 	mainWindowStroke.Thickness = 1
 	mainWindowStroke.Color = OrionLib.Themes[OrionLib.SelectedTheme].Stroke
-	mainWindowStroke.Transparency = 0.15
+	mainWindowStroke.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
 	mainWindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	mainWindowGradient.Color = createGradientFromColor(OrionLib.Themes[OrionLib.SelectedTheme].Stroke, 0.7)
+	ApplyVisualPreferences()
 
     local window = MainWindow
 
@@ -1501,6 +1695,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		lastAppliedSize = size
 		ExpandedSize = size
 		window.Size = UDim2.fromOffset(size.X, size.Y)
+		updateSidebarLayout()
 	end
 
 	AddConnection(ResizeHandle.MouseEnter, function()
@@ -1635,6 +1830,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		if Minimized then
 			WindowName.Text = CompactWindowName
 			ResizeHandle.Visible = false
+			SidebarResizeHandle.Visible = false
 			showMobileOpenButton()
 			MainWindow.ClipsDescendants = true
 			WindowTopBarLine.Visible = false
@@ -1655,6 +1851,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			ContentFadeGroup.GroupTransparency = 1
 			WindowTopBarLine.Visible = true
 			ResizeHandle.Visible = true
+			SidebarResizeHandle.Visible = true
 			MinimizeBtn.Ico.Image = "rbxassetid://7072719338"
 			TweenService:Create(ContentFadeGroup, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
 			sizeTween = TweenService:Create(MainWindow, TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -1662,6 +1859,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			})
 			sizeTween:Play()
 			sizeTween.Completed:Once(function()
+				updateSidebarLayout()
 				MainWindow.ClipsDescendants = false
 				minimizeTransition = false
 			end)
@@ -1852,8 +2050,8 @@ function OrionLib:MakeWindow(WindowConfig)
 		end
 
 		local Container = AddThemeObject(SetChildren(SetProps(MakeElement("ScrollFrame", Color3.fromRGB(255, 255, 255), 5), {
-			Size = UDim2.new(1, -150, 1, -50),
-			Position = UDim2.new(0, 150, 0, 50),
+			Size = UDim2.new(1, -SidebarWidth, 1, -50),
+			Position = UDim2.new(0, SidebarWidth, 0, 50),
 			Parent = ContentFadeGroup,
 			Visible = false,
 			Name = "ItemContainer"
@@ -1868,6 +2066,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			Frame = TabFrame,
 			Container = Container
 		}
+		updateSidebarLayout()
 		searchDirty = true
 
 		AddConnection(Container.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
@@ -4407,42 +4606,61 @@ function OrionLib:MakeWindow(WindowConfig)
 		local ElementFunction = {}
 
 		function ElementFunction:AddSection(SectionConfig)
-			SectionConfig.Name = SectionConfig.Name or "Section"
+			-- Supported forms:
+			-- Tab:AddSection()
+			-- Tab:AddSection("Section name")
+			-- Tab:AddSection({Name = "Section name"})
+			if type(SectionConfig) == "string" then
+				SectionConfig = {Name = SectionConfig}
+			elseif type(SectionConfig) ~= "table" then
+				SectionConfig = {}
+			end
 
-			local SectionFrame = SetChildren(SetProps(MakeElement("TFrame"), {
-				Size = UDim2.new(1, 0, 0, 26),
-				Parent = Container
-			}), {
-				AddThemeObject(SetProps(MakeElement("Label", SectionConfig.Name, 14), {
+			local SectionName = type(SectionConfig.Name) == "string" and SectionConfig.Name or ""
+			local HasName = SectionName:match("%S") ~= nil
+			local HeaderHeight = HasName and 26 or 0
+			local HolderPosition = HasName and 23 or 0
+			local ExtraHeight = HasName and 31 or 0
+
+			local SectionChildren = {}
+			if HasName then
+				table.insert(SectionChildren, AddThemeObject(SetProps(MakeElement("Label", SectionName, 14), {
 					Size = UDim2.new(1, -12, 0, 16),
 					Position = UDim2.new(0, 0, 0, 3),
 					Font = Enum.Font.GothamSemibold
-				}), "TextDark"),
-				SetChildren(SetProps(MakeElement("TFrame"), {
-					AnchorPoint = Vector2.new(0, 0),
-					Size = UDim2.new(1, 0, 1, -24),
-					Position = UDim2.new(0, 0, 0, 23),
-					Name = "Holder"
-				}), {
-					MakeElement("List", 0, 6)
-				}),
-			})
+				}), "TextDark"))
+			end
 
-			AddConnection(SectionFrame.Holder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-				SectionFrame.Size = UDim2.new(1, 0, 0, SectionFrame.Holder.UIListLayout.AbsoluteContentSize.Y + 31)
-				SectionFrame.Holder.Size = UDim2.new(1, 0, 0, SectionFrame.Holder.UIListLayout.AbsoluteContentSize.Y)
+			local Holder = SetChildren(SetProps(MakeElement("TFrame"), {
+				AnchorPoint = Vector2.new(0, 0),
+				Size = UDim2.new(1, 0, 0, 0),
+				Position = UDim2.new(0, 0, 0, HolderPosition),
+				Name = "Holder"
+			}), {
+				MakeElement("List", 0, 6)
+			})
+			table.insert(SectionChildren, Holder)
+
+			local SectionFrame = SetChildren(SetProps(MakeElement("TFrame"), {
+				Size = UDim2.new(1, 0, 0, HeaderHeight),
+				Parent = Container
+			}), SectionChildren)
+
+			AddConnection(Holder.UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+				local ContentHeight = Holder.UIListLayout.AbsoluteContentSize.Y
+				SectionFrame.Size = UDim2.new(1, 0, 0, ContentHeight + ExtraHeight)
+				Holder.Size = UDim2.new(1, 0, 0, ContentHeight)
 			end)
 
 			local SectionFunction = {}
-
-			for i, v in next, GetElements(SectionFrame.Holder) do
+			for i, v in next, GetElements(Holder) do
 				SectionFunction[i] = v
 			end
 
 			Sections[TabConfig.Name] = Sections[TabConfig.Name] or {}
-			Sections[TabConfig.Name][SectionConfig.Name] = SectionFrame
-
-			SectionFrame.Name = SectionConfig.Name
+			local RegistryName = HasName and SectionName or ("__AnonymousSection_" .. tostring(#Container:GetChildren()))
+			Sections[TabConfig.Name][RegistryName] = SectionFrame
+			SectionFrame.Name = HasName and SectionName or "Section"
 
 			return SectionFunction
 		end
@@ -4530,6 +4748,24 @@ function OrionLib:MakeWindow(WindowConfig)
 					TabFunction:SetKeystrokesLocked(Value)
 				end,
 			})
+
+			keystrokes:AddSlider({
+				Name = "Key Background Visibility",
+				Min = 0,
+				Max = 100,
+				Default = VisualPreferences.KeystrokeBackgroundVisibility,
+				Increment = 1,
+				ValueName = "%",
+				Callback = function(Value)
+					VisualPreferences.KeystrokeBackgroundVisibility = Value
+					KeystrokesFrame.BackgroundTransparency = 1
+					for _, Item in ipairs(OrionLib.Keystrokes) do
+						if Item.Frame and Item.Frame.Parent then
+							Item.Frame.BackgroundTransparency = VisibilityToTransparency(Value)
+						end
+					end
+				end,
+			})
 		end
 
 		background:AddToggle({
@@ -4554,7 +4790,33 @@ function OrionLib:MakeWindow(WindowConfig)
 		})
 
 		windowstroke:AddSlider({
-			Name = "Stroke",
+			Name = "Border Visibility",
+			Min = 0,
+			Max = 100,
+			Default = VisualPreferences.StrokeVisibility,
+			Increment = 1,
+			ValueName = "%",
+			Callback = function(Value)
+				VisualPreferences.StrokeVisibility = Value
+				ApplyVisualPreferences()
+			end,
+		})
+
+		windowstroke:AddSlider({
+			Name = "Separator Visibility",
+			Min = 0,
+			Max = 100,
+			Default = VisualPreferences.SeparatorVisibility,
+			Increment = 1,
+			ValueName = "%",
+			Callback = function(Value)
+				VisualPreferences.SeparatorVisibility = Value
+				ApplyVisualPreferences()
+			end,
+		})
+
+		windowstroke:AddSlider({
+			Name = "Border Thickness",
 			Min = 1,
 			Max = 3,
 			Default = 1.5,
