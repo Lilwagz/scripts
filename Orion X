@@ -10,6 +10,7 @@ local CoreGui = game:GetService("CoreGui")
 local PlayerService = game:GetService("Players")
 local UserService = game:GetService("UserService")
 local Lighting = game:GetService("Lighting")
+local Stats = game:GetService("Stats")
 
 local SearchBarsTXTBox = {}
 
@@ -339,6 +340,8 @@ local VisualPreferences = {
 	SeparatorVisibility = 0,
 	KeystrokeBackgroundVisibility = 0,
 	KeystrokeStrokeVisibility = 0,
+	KeystrokeCornerRadius = 2,
+	KeystrokePressedStrength = 28,
 	CornerRadius = 10,
 }
 OrionLib.VisualPreferences = VisualPreferences
@@ -347,6 +350,28 @@ local ManagedCorners = {}
 
 local function VisibilityToTransparency(Value)
 	return 1 - (math.clamp(tonumber(Value) or 0, 0, 100) / 100)
+end
+
+local function MixColor(From, To, Amount)
+	Amount = math.clamp(tonumber(Amount) or 0, 0, 1)
+	return Color3.new(
+		From.R + (To.R - From.R) * Amount,
+		From.G + (To.G - From.G) * Amount,
+		From.B + (To.B - From.B) * Amount
+	)
+end
+
+local function GetKeystrokeVisual(Theme, Pressed)
+	if not Pressed then
+		return Theme.Second, Theme.Stroke, Theme.Text
+	end
+
+	local strength = math.clamp(tonumber(VisualPreferences.KeystrokePressedStrength) or 28, 0, 100) / 100
+	-- Pressed keys use a softened accent instead of the full saturated accent.
+	local background = MixColor(Theme.Second, Theme.Accent, strength)
+	local stroke = MixColor(Theme.Stroke, Theme.Accent, math.min(0.65, strength * 1.15))
+	local text = MixColor(Theme.Text, Theme.Accent, math.min(0.35, strength * 0.45))
+	return background, stroke, text
 end
 
 local function RegisterManagedCorner(Corner, Scale, Offset)
@@ -525,12 +550,16 @@ function OrionLib:SetTheme()
 
 	for _, key in ipairs(self.Keystrokes) do
 		if key.Frame and key.Frame.Parent then
-			key.Frame.BackgroundColor3 = key.Pressed and themeData.Accent or themeData.Second
+			local backgroundColor, strokeColor, textColor = GetKeystrokeVisual(themeData, key.Pressed)
+			key.Frame.BackgroundColor3 = backgroundColor
 			key.Frame.BackgroundTransparency = VisibilityToTransparency(VisualPreferences.KeystrokeBackgroundVisibility)
-			key.Stroke.Color = key.Pressed and themeData.Accent or themeData.Stroke
+			key.Stroke.Color = strokeColor
 			key.Stroke.Transparency = VisibilityToTransparency(VisualPreferences.KeystrokeStrokeVisibility)
+			if key.Corner then
+				key.Corner.CornerRadius = UDim.new(0, math.clamp(tonumber(VisualPreferences.KeystrokeCornerRadius) or 0, 0, 16))
+			end
 			if key.Label then
-				key.Label.TextColor3 = key.Pressed and themeData.Accent or themeData.Text
+				key.Label.TextColor3 = textColor
 			end
 		end
 	end
@@ -999,14 +1028,86 @@ function OrionLib:MakeWindow(WindowConfig)
 	WindowConfig.SearchBar = WindowConfig.SearchBar ~= false
 	WindowConfig.RichName = WindowConfig.RichName or nil
 	WindowConfig.IconColorChange = WindowConfig.IconColorChange or false
-	SidebarWidth = math.clamp(tonumber(WindowConfig.SidebarWidth) or SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
+	WindowConfig.AutoSaveUI = WindowConfig.AutoSaveUI ~= false
 	OrionLib.Folder = WindowConfig.ConfigFolder
 	OrionLib.SaveCfg = WindowConfig.SaveConfig
 	OrionLib.FreeMouse = WindowConfig.FreeMouse
-	if WindowConfig.SaveConfig then
-		if not isfolder(WindowConfig.ConfigFolder) then
-			makefolder(WindowConfig.ConfigFolder)
-		end
+
+	local fileFunctionsAvailable = type(isfolder) == "function"
+		and type(makefolder) == "function"
+		and type(isfile) == "function"
+		and type(readfile) == "function"
+		and type(writefile) == "function"
+
+	if fileFunctionsAvailable and (WindowConfig.SaveConfig or WindowConfig.AutoSaveUI) and not isfolder(WindowConfig.ConfigFolder) then
+		pcall(makefolder, WindowConfig.ConfigFolder)
+	end
+
+	local UI_CONFIG_FILE = WindowConfig.ConfigFolder .. "/" .. tostring(game.GameId) .. "_orionx_ui.json"
+	local UIState = {
+		AutoSave = WindowConfig.AutoSaveUI,
+		StrokeVisibility = VisualPreferences.StrokeVisibility,
+		SeparatorVisibility = VisualPreferences.SeparatorVisibility,
+		BorderThickness = 1.5,
+		CornerRadius = VisualPreferences.CornerRadius,
+		KeystrokeBackgroundVisibility = VisualPreferences.KeystrokeBackgroundVisibility,
+		KeystrokeStrokeVisibility = VisualPreferences.KeystrokeStrokeVisibility,
+		KeystrokeCornerRadius = VisualPreferences.KeystrokeCornerRadius,
+		KeystrokePressedStrength = VisualPreferences.KeystrokePressedStrength,
+		ShowKeystrokes = false,
+		KeystrokesLocked = false,
+		BlurEnabled = false,
+		BlurSize = 12,
+		ShowFPS = false,
+		ShowPing = false,
+		ShowClock = true,
+		ShowTemperature = true,
+		TemperatureUnit = "Auto",
+		SidebarWidth = tonumber(WindowConfig.SidebarWidth) or SIDEBAR_DEFAULT_WIDTH,
+	}
+
+	local knownUIKeys = {}
+	for key in pairs(UIState) do knownUIKeys[key] = true end
+	knownUIKeys.WindowSize = true
+	knownUIKeys.WindowPosition = true
+	knownUIKeys.KeystrokesPosition = true
+
+	if fileFunctionsAvailable and isfile(UI_CONFIG_FILE) then
+		pcall(function()
+			local loaded = HttpService:JSONDecode(readfile(UI_CONFIG_FILE))
+			if type(loaded) == "table" then
+				for key, value in pairs(loaded) do
+					if knownUIKeys[key] then UIState[key] = value end
+				end
+			end
+		end)
+	end
+
+	VisualPreferences.StrokeVisibility = math.clamp(tonumber(UIState.StrokeVisibility) or 0, 0, 100)
+	VisualPreferences.SeparatorVisibility = math.clamp(tonumber(UIState.SeparatorVisibility) or 0, 0, 100)
+	VisualPreferences.CornerRadius = math.clamp(tonumber(UIState.CornerRadius) or 10, 0, 32)
+	VisualPreferences.KeystrokeBackgroundVisibility = math.clamp(tonumber(UIState.KeystrokeBackgroundVisibility) or 0, 0, 100)
+	VisualPreferences.KeystrokeStrokeVisibility = math.clamp(tonumber(UIState.KeystrokeStrokeVisibility) or 0, 0, 100)
+	VisualPreferences.KeystrokeCornerRadius = math.clamp(tonumber(UIState.KeystrokeCornerRadius) or 2, 0, 16)
+	VisualPreferences.KeystrokePressedStrength = math.clamp(tonumber(UIState.KeystrokePressedStrength) or 28, 0, 100)
+	SidebarWidth = math.clamp(tonumber(UIState.SidebarWidth) or SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)
+
+	local uiSaveGeneration = 0
+	local function saveUIConfig(Force)
+		if not fileFunctionsAvailable then return end
+		if not Force and UIState.AutoSave == false then return end
+		pcall(function()
+			writefile(UI_CONFIG_FILE, HttpService:JSONEncode(UIState))
+		end)
+	end
+
+	local function scheduleUIConfigSave()
+		if UIState.AutoSave == false then return end
+		uiSaveGeneration += 1
+		local generation = uiSaveGeneration
+		task.delay(0.35, function()
+			if generation == uiSaveGeneration then saveUIConfig(false) end
+		end)
 	end
 
 	if WindowConfig.FreeMouse then
@@ -1350,6 +1451,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Font = Enum.Font.GothamSemibold,
 		TextTransparency = 0.12,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		ZIndex = 3,
 	}), "Text")
 
@@ -1380,10 +1482,19 @@ function OrionLib:MakeWindow(WindowConfig)
 		Position = UDim2.new(0, 0, 1, -1)
 	}), "Stroke")
 
+	local savedWindowSize = type(UIState.WindowSize) == "table" and UIState.WindowSize or nil
+	local initialViewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+	local initialWindowWidth = math.clamp(tonumber(savedWindowSize and savedWindowSize.x) or 615, 430, math.max(430, initialViewport.X - 8))
+	local initialWindowHeight = math.clamp(tonumber(savedWindowSize and savedWindowSize.y) or 344, 260, math.max(260, initialViewport.Y - 8))
+	local savedWindowPosition = type(UIState.WindowPosition) == "table" and UIState.WindowPosition or nil
+	local initialWindowPosition = savedWindowPosition
+		and UDim2.fromOffset(tonumber(savedWindowPosition.x) or 30, tonumber(savedWindowPosition.y) or 30)
+		or UDim2.new(0.5, -math.floor(initialWindowWidth / 2), 0.5, -math.floor(initialWindowHeight / 2))
+
 	local MainWindow = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), {
 		Parent = Orion,
-		Position = UDim2.new(0.5, -307, 0.5, -172),
-		Size = UDim2.new(0, 615, 0, 344),
+		Position = initialWindowPosition,
+		Size = UDim2.fromOffset(initialWindowWidth, initialWindowHeight),
 		ClipsDescendants = true,
 		Active = true,
 	}), {
@@ -1416,8 +1527,8 @@ function OrionLib:MakeWindow(WindowConfig)
 	local SidebarResizeHandle = Instance.new("TextButton")
 	SidebarResizeHandle.Name = "SidebarResizeHandle"
 	SidebarResizeHandle.AnchorPoint = Vector2.new(0.5, 1)
-	SidebarResizeHandle.Size = UDim2.fromOffset(24, 54)
-	SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -8)
+	SidebarResizeHandle.Size = UDim2.fromOffset(28, 64)
+	SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -2)
 	SidebarResizeHandle.BackgroundTransparency = 1
 	SidebarResizeHandle.Text = ""
 	SidebarResizeHandle.AutoButtonColor = false
@@ -1451,7 +1562,8 @@ function OrionLib:MakeWindow(WindowConfig)
 		end
 
 		WindowStuff.Size = UDim2.new(0, SidebarWidth, 1, -50)
-		SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -8)
+		SidebarResizeHandle.Position = UDim2.new(0, SidebarWidth, 1, -2)
+		UIState.SidebarWidth = SidebarWidth
 
 		if SidebarCollapsed then
 			GlobalSearch.Visible = false
@@ -1465,17 +1577,22 @@ function OrionLib:MakeWindow(WindowConfig)
 			TabHolder.Size = UDim2.new(1, 0, 1, -100)
 		end
 
+		local compactIconSize = math.clamp(math.floor(SidebarWidth * 0.39 + 0.5), 21, 25)
 		for _, tabName in ipairs(TabsOrder) do
 			local tabData = Tabs[tabName]
 			if tabData then
 				local tabFrame = tabData.Frame
 				if tabFrame and tabFrame.Parent then
+					tabFrame.Size = SidebarCollapsed and UDim2.new(1, 0, 0, 34) or UDim2.new(1, 0, 0, 30)
 					if tabFrame:FindFirstChild("Title") then
 						tabFrame.Title.Visible = not SidebarCollapsed
 					end
 					if tabFrame:FindFirstChild("Ico") then
+						tabFrame.Ico.Size = SidebarCollapsed
+							and UDim2.fromOffset(compactIconSize, compactIconSize)
+							or UDim2.fromOffset(18, 18)
 						tabFrame.Ico.Position = SidebarCollapsed
-							and UDim2.new(0.5, -9, 0.5, 0)
+							and UDim2.new(0.5, -math.floor(compactIconSize / 2), 0.5, 0)
 							or UDim2.new(0, 10, 0.5, 0)
 					end
 				end
@@ -1494,11 +1611,18 @@ function OrionLib:MakeWindow(WindowConfig)
 			local outline = footer:FindFirstChild("ProfileAvatarOutline")
 			local name = footer:FindFirstChild("ProfileName")
 			local premium = footer:FindFirstChild("ProfilePremium")
+			local avatarSize = SidebarCollapsed and math.clamp(math.floor(SidebarWidth * 0.58), 32, 38) or 32
 			local avatarPosition = SidebarCollapsed
-				and UDim2.new(0.5, -16, 0.5, 0)
+				and UDim2.new(0.5, -math.floor(avatarSize / 2), 0.5, 0)
 				or UDim2.new(0, 10, 0.5, 0)
-			if avatar then avatar.Position = avatarPosition end
-			if outline then outline.Position = avatarPosition end
+			if avatar then
+				avatar.Size = UDim2.fromOffset(avatarSize, avatarSize)
+				avatar.Position = avatarPosition
+			end
+			if outline then
+				outline.Size = UDim2.fromOffset(avatarSize, avatarSize)
+				outline.Position = avatarPosition
+			end
 			if name then name.Visible = not SidebarCollapsed end
 			if premium then premium.Visible = (not SidebarCollapsed) and (not WindowConfig.HidePremium) end
 		end
@@ -1520,6 +1644,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			SidebarCollapsed = false
 		end
 		updateSidebarLayout()
+		scheduleUIConfigSave()
 	end
 
 	local function toggleSidebarSize()
@@ -1531,6 +1656,7 @@ function OrionLib:MakeWindow(WindowConfig)
 			SidebarCollapsed = true
 		end
 		updateSidebarLayout()
+		scheduleUIConfigSave()
 	end
 
 	AddConnection(SidebarResizeHandle.MouseEnter, function()
@@ -1575,29 +1701,96 @@ function OrionLib:MakeWindow(WindowConfig)
 	updateSidebarLayout()
 
 	local localUtcOffset = 0
-	local localTemperature
+	local localTemperatureC
+	local localCountryCode = ""
 	local localInfoAlive = true
-	local function updateLocalInfoText()
-		local clock = os.date("!%H:%M", os.time() + localUtcOffset)
-		LocalInfo.Text = localTemperature and string.format("%s  /  %d°C", clock, math.floor(localTemperature + 0.5)) or clock
+	local smoothedFPS = 0
+	local currentPingMS = 0
+	local frameCounter = 0
+	local frameAccumulator = 0
+
+	local FahrenheitCountries = {
+		US = true, BS = true, BZ = true, KY = true,
+		PW = true, FM = true, MH = true,
+	}
+
+	local function resolveTemperatureUnit()
+		local requested = tostring(UIState.TemperatureUnit or "Auto")
+		if requested == "Celsius" then return "C" end
+		if requested == "Fahrenheit" then return "F" end
+		if requested == "Kelvin" then return "K" end
+		return FahrenheitCountries[string.upper(localCountryCode)] and "F" or "C"
 	end
+
+	local function formatTemperature()
+		if not localTemperatureC then return "--°" end
+		local unit = resolveTemperatureUnit()
+		local value = localTemperatureC
+		if unit == "F" then
+			value = (value * 9 / 5) + 32
+		elseif unit == "K" then
+			value += 273.15
+		end
+		return string.format("%d°%s", math.floor(value + 0.5), unit)
+	end
+
+	local function updateTopBarResponsiveness()
+		if not MainWindow or not MainWindow.Parent then return end
+		local desiredWidth = TextService:GetTextSize(
+			LocalInfo.ContentText or LocalInfo.Text,
+			LocalInfo.TextSize,
+			LocalInfo.Font,
+			Vector2.new(math.huge, 28)
+		).X + 8
+		local available = math.max(0, MainWindow.AbsoluteSize.X - 285)
+		local infoWidth = math.clamp(desiredWidth, 0, available)
+		LocalInfo.Size = UDim2.fromOffset(infoWidth, 28)
+		LocalInfo.Visible = infoWidth > 20 and LocalInfo.Text ~= ""
+		WindowName.Size = UDim2.new(1, -(120 + infoWidth), 2, 0)
+	end
+
+	local function updateLocalInfoText()
+		local pieces = {}
+		if UIState.ShowFPS then table.insert(pieces, string.format("%d FPS", math.max(0, math.floor(smoothedFPS + 0.5)))) end
+		if UIState.ShowPing then table.insert(pieces, string.format("%d ms", math.max(0, math.floor(currentPingMS + 0.5)))) end
+		if UIState.ShowClock then table.insert(pieces, os.date("!%H:%M", os.time() + localUtcOffset)) end
+		if UIState.ShowTemperature then table.insert(pieces, formatTemperature()) end
+		LocalInfo.Text = table.concat(pieces, "  /  ")
+		updateTopBarResponsiveness()
+	end
+
 	local function readJson(url)
 		local ok, body = pcall(game.HttpGet, game, url)
 		if not ok then return nil end
 		local decodedOk, data = pcall(HttpService.JSONDecode, HttpService, body)
 		return decodedOk and data or nil
 	end
+
+	AddConnection(RunService.RenderStepped, function(deltaTime)
+		if deltaTime <= 0 then return end
+		frameCounter += 1
+		frameAccumulator += deltaTime
+		if frameAccumulator >= 0.4 then
+			local sampledFPS = frameCounter / frameAccumulator
+			smoothedFPS = smoothedFPS == 0 and sampledFPS or (smoothedFPS * 0.72 + sampledFPS * 0.28)
+			frameCounter = 0
+			frameAccumulator = 0
+		end
+	end)
+
 	task.spawn(function()
 		local location = readJson("https://ipinfo.io/json")
 		local latitude, longitude
 		if location and type(location.loc) == "string" then
 			local lat, lon = location.loc:match("^([%-%.%d]+),([%-%.%d]+)$")
 			latitude, longitude = tonumber(lat), tonumber(lon)
+			localCountryCode = tostring(location.country or "")
 		end
 		if not latitude or not longitude then
 			location = readJson("https://ipwho.is/")
 			latitude = location and tonumber(location.latitude)
 			longitude = location and tonumber(location.longitude)
+			localCountryCode = tostring(location and location.country_code or localCountryCode)
 		end
 		if location and location.success ~= false and latitude and longitude then
 			if type(location.timezone) == "table" and type(location.timezone.utc) == "string" then
@@ -1611,47 +1804,54 @@ function OrionLib:MakeWindow(WindowConfig)
 				local weather = readJson(url)
 				if weather then
 					localUtcOffset = tonumber(weather.utc_offset_seconds) or localUtcOffset
-					localTemperature = weather.current and tonumber(weather.current.temperature_2m) or localTemperature
+					localTemperatureC = weather.current and tonumber(weather.current.temperature_2m) or localTemperatureC
 					updateLocalInfoText()
 				end
 				task.wait(600)
 			end
 		end
 	end)
+
 	task.spawn(function()
 		while localInfoAlive do
+			local ok, ping = pcall(function()
+				return LocalPlayer:GetNetworkPing() * 1000
+			end)
+			if ok and type(ping) == "number" then
+				currentPingMS = ping
+			else
+				pcall(function()
+					currentPingMS = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+				end)
+			end
 			updateLocalInfoText()
 			task.wait(1)
 		end
 	end)
+
 	Orion.Destroying:Connect(function()
 		localInfoAlive = false
 	end)
-	local ExpandedSize = MainWindow.AbsoluteSize
+	local ExpandedSize = Vector2.new(initialWindowWidth, initialWindowHeight)
 	local BackgroundBlur = Instance.new("BlurEffect")
 	BackgroundBlur.Name = "OrionBackgroundBlur"
 	BackgroundBlur.Size = 0
 	BackgroundBlur.Parent = Lighting
-	local KeystrokesLocked = false
-	local KeystrokesOuterStroke = SetProps(MakeElement("Stroke"), {
-		Transparency = VisibilityToTransparency(VisualPreferences.KeystrokeStrokeVisibility)
-	})
-	KeystrokesOuterStroke:SetAttribute("OrionKeystrokeStroke", true)
-	KeystrokesOuterStroke = AddThemeObject(KeystrokesOuterStroke, "Stroke")
-
+	local KeystrokesLocked = UIState.KeystrokesLocked == true
+	local savedKeystrokesPosition = type(UIState.KeystrokesPosition) == "table" and UIState.KeystrokesPosition or nil
 	local KeystrokesFrame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 10), {
 		Name = "Keystrokes",
 		Size = UDim2.fromOffset(148, 114),
-		Position = UDim2.new(1, -172, 0.5, -57),
+		Position = savedKeystrokesPosition
+			and UDim2.fromOffset(tonumber(savedKeystrokesPosition.x) or 40, tonumber(savedKeystrokesPosition.y) or 40)
+			or UDim2.new(1, -172, 0.5, -57),
 		-- The keystroke overlay itself has no solid panel background.
 		BackgroundTransparency = 1,
-		Visible = false,
+		Visible = not IsMobile and UIState.ShowKeystrokes == true,
 		Active = true,
 		ZIndex = 5,
 		Parent = Orion,
-	}), {
-		KeystrokesOuterStroke,
-	}), "Main")
+	}), {}), "Main")
 
 	local function createKeystroke(Name, Text, Position, Size)
 		local stroke = SetProps(MakeElement("Stroke"), {
@@ -1659,13 +1859,15 @@ function OrionLib:MakeWindow(WindowConfig)
 		})
 		stroke:SetAttribute("OrionKeystrokeStroke", true)
 		stroke = AddThemeObject(stroke, "Stroke")
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, math.clamp(tonumber(VisualPreferences.KeystrokeCornerRadius) or 0, 0, 16))
 		local label = AddThemeObject(SetProps(MakeElement("Label", Text, 12), {
 			Size = UDim2.fromScale(1, 1),
 			TextXAlignment = Enum.TextXAlignment.Center,
 			Font = Enum.Font.GothamSemibold,
 			ZIndex = 7,
 		}), "Text")
-		local frame = AddThemeObject(SetChildren(SetProps(MakeElement("RoundFrame", Color3.fromRGB(255, 255, 255), 0, 6), {
+		local frame = AddThemeObject(SetChildren(SetProps(MakeElement("Frame", Color3.fromRGB(255, 255, 255)), {
 			Name = Name,
 			Size = Size,
 			Position = Position,
@@ -1673,10 +1875,11 @@ function OrionLib:MakeWindow(WindowConfig)
 			ZIndex = 6,
 			Parent = KeystrokesFrame,
 		}), {
+			corner,
 			stroke,
 			label,
 		}), "Second")
-		local item = {Frame = frame, Stroke = stroke, Label = label, Pressed = false}
+		local item = {Frame = frame, Stroke = stroke, Label = label, Corner = corner, Pressed = false}
 		table.insert(OrionLib.Keystrokes, item)
 		return item
 	end
@@ -1695,12 +1898,16 @@ function OrionLib:MakeWindow(WindowConfig)
 		if not item then return end
 		item.Pressed = Pressed
 		local theme = OrionLib.Themes[OrionLib.SelectedTheme]
-		item.Frame.BackgroundColor3 = Pressed and theme.Accent or theme.Second
+		local backgroundColor, strokeColor, textColor = GetKeystrokeVisual(theme, Pressed)
+		item.Frame.BackgroundColor3 = backgroundColor
 		item.Frame.BackgroundTransparency = VisibilityToTransparency(VisualPreferences.KeystrokeBackgroundVisibility)
-		item.Stroke.Color = Pressed and theme.Accent or theme.Stroke
+		item.Stroke.Color = strokeColor
 		item.Stroke.Transparency = VisibilityToTransparency(VisualPreferences.KeystrokeStrokeVisibility)
+		if item.Corner then
+			item.Corner.CornerRadius = UDim.new(0, math.clamp(tonumber(VisualPreferences.KeystrokeCornerRadius) or 0, 0, 16))
+		end
 		if item.Label then
-			item.Label.TextColor3 = Pressed and theme.Accent or theme.Text
+			item.Label.TextColor3 = textColor
 		end
 	end
 
@@ -1713,8 +1920,17 @@ function OrionLib:MakeWindow(WindowConfig)
 	MakeDraggable(KeystrokesFrame, KeystrokesFrame, function()
 		return not KeystrokesLocked
 	end)
-	local BlurEnabled = false
-	local BlurSize = 12
+	AddConnection(KeystrokesFrame:GetPropertyChangedSignal("Position"), function()
+		if KeystrokesFrame.Visible then
+			UIState.KeystrokesPosition = {
+				x = math.floor(KeystrokesFrame.AbsolutePosition.X + 0.5),
+				y = math.floor(KeystrokesFrame.AbsolutePosition.Y + 0.5),
+			}
+			scheduleUIConfigSave()
+		end
+	end)
+	local BlurEnabled = UIState.BlurEnabled == true
+	local BlurSize = math.clamp(tonumber(UIState.BlurSize) or 12, 0, 30)
 	local blurTween
 	local function updateBlur()
 		if blurTween then blurTween:Cancel() end
@@ -1735,7 +1951,7 @@ function OrionLib:MakeWindow(WindowConfig)
 	WindowStuff.Parent = ContentFadeGroup
 
 	mainWindowStroke.Parent = MainWindow
-	mainWindowStroke.Thickness = 1
+	mainWindowStroke.Thickness = math.clamp(tonumber(UIState.BorderThickness) or 1.5, 0, 3)
 	mainWindowStroke.Color = OrionLib.Themes[OrionLib.SelectedTheme].Stroke
 	mainWindowStroke.Transparency = VisibilityToTransparency(VisualPreferences.StrokeVisibility)
 	mainWindowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -1767,7 +1983,32 @@ function OrionLib:MakeWindow(WindowConfig)
 		260
 	)
 
-    local resizing = false
+	local function clampWindowToViewport()
+		local camera = workspace.CurrentCamera
+		local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+		local size = MainWindow.AbsoluteSize
+		local current = MainWindow.AbsolutePosition
+		local x = math.clamp(current.X, 4, math.max(4, viewport.X - size.X - 4))
+		local y = math.clamp(current.Y, 4, math.max(4, viewport.Y - size.Y - 4))
+		if math.abs(x - current.X) > 0.5 or math.abs(y - current.Y) > 0.5 then
+			MainWindow.Position = UDim2.fromOffset(math.floor(x + 0.5), math.floor(y + 0.5))
+		end
+	end
+
+	local function captureWindowGeometry()
+		if Minimized then return end
+		UIState.WindowSize = {
+			x = math.floor(ExpandedSize.X + 0.5),
+			y = math.floor(ExpandedSize.Y + 0.5),
+		}
+		UIState.WindowPosition = {
+			x = math.floor(MainWindow.AbsolutePosition.X + 0.5),
+			y = math.floor(MainWindow.AbsolutePosition.Y + 0.5),
+		}
+		scheduleUIConfigSave()
+	end
+
+	local resizing = false
     local resizeActiveInput
     local startMousePos
     local startSize
@@ -1802,6 +2043,7 @@ function OrionLib:MakeWindow(WindowConfig)
 		ExpandedSize = size
 		window.Size = UDim2.fromOffset(size.X, size.Y)
 		updateSidebarLayout()
+		updateTopBarResponsiveness()
 	end
 
 	AddConnection(ResizeHandle.MouseEnter, function()
@@ -1828,6 +2070,8 @@ function OrionLib:MakeWindow(WindowConfig)
 			updateResize(true, input.Position)
             resizing = false
 			resizeActiveInput = nil
+			clampWindowToViewport()
+			captureWindowGeometry()
         end
 	end)
 
@@ -1852,6 +2096,38 @@ function OrionLib:MakeWindow(WindowConfig)
 	end
 
 	MakeDraggable(DragPoint, MainWindow)
+	AddConnection(MainWindow:GetPropertyChangedSignal("Position"), function()
+		if not resizing and not Minimized then captureWindowGeometry() end
+	end)
+	AddConnection(MainWindow:GetPropertyChangedSignal("AbsoluteSize"), function()
+		if not Minimized then
+			updateTopBarResponsiveness()
+			updateSidebarLayout()
+		end
+	end)
+	if workspace.CurrentCamera then
+		AddConnection(workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"), function()
+			local viewport = workspace.CurrentCamera.ViewportSize
+			if not Minimized then
+				local fitted = Vector2.new(
+					math.clamp(ExpandedSize.X, MIN_SIZE.X, math.max(MIN_SIZE.X, viewport.X - 8)),
+					math.clamp(ExpandedSize.Y, MIN_SIZE.Y, math.max(MIN_SIZE.Y, viewport.Y - 8))
+				)
+				if (fitted - ExpandedSize).Magnitude > 0.5 then
+					ExpandedSize = fitted
+					MainWindow.Size = UDim2.fromOffset(fitted.X, fitted.Y)
+				end
+			end
+			clampWindowToViewport()
+			updateSidebarLayout()
+			updateTopBarResponsiveness()
+			captureWindowGeometry()
+		end)
+	end
+	task.defer(function()
+		clampWindowToViewport()
+		updateTopBarResponsiveness()
+	end)
 
 	local RestoreWindow
 	AddConnection(MobileOpenButton.MouseButton1Click, function()
@@ -2107,13 +2383,20 @@ function OrionLib:MakeWindow(WindowConfig)
 	function TabFunction:SetBlur(Enabled, Size)
 		BlurEnabled = Enabled == true
 		if type(Size) == "number" then BlurSize = math.clamp(Size, 0, 56) end
+		UIState.BlurEnabled = BlurEnabled
+		UIState.BlurSize = BlurSize
 		updateBlur()
+		scheduleUIConfigSave()
 	end
 	function TabFunction:SetKeystrokes(Enabled)
-		KeystrokesFrame.Visible = not IsMobile and Enabled == true
+		UIState.ShowKeystrokes = Enabled == true
+		KeystrokesFrame.Visible = not IsMobile and UIState.ShowKeystrokes
+		scheduleUIConfigSave()
 	end
 	function TabFunction:SetKeystrokesLocked(Locked)
 		KeystrokesLocked = Locked == true
+		UIState.KeystrokesLocked = KeystrokesLocked
+		scheduleUIConfigSave()
 	end
 	function TabFunction:SetMobilePreview(Enabled)
 		MobilePreview = Enabled == true
@@ -4838,6 +5121,14 @@ function OrionLib:MakeWindow(WindowConfig)
 			Name = "Background"
 		})
 
+		local topbar_info = config_tab:AddSection({
+			Name = "Top Bar Info"
+		})
+
+		local persistence = config_tab:AddSection({
+			Name = "Save"
+		})
+
 		if not IsMobile then
 			local keystrokes = config_tab:AddSection({
 				Name = "Keystrokes"
@@ -4845,7 +5136,7 @@ function OrionLib:MakeWindow(WindowConfig)
 
 			keystrokes:AddToggle({
 				Name = "Show Keystrokes",
-				Default = false,
+				Default = UIState.ShowKeystrokes == true,
 				Callback = function(Value)
 					TabFunction:SetKeystrokes(Value)
 				end,
@@ -4853,7 +5144,7 @@ function OrionLib:MakeWindow(WindowConfig)
 
 			keystrokes:AddToggle({
 				Name = "Lock Position",
-				Default = false,
+				Default = UIState.KeystrokesLocked == true,
 				Callback = function(Value)
 					TabFunction:SetKeystrokesLocked(Value)
 				end,
@@ -4868,7 +5159,9 @@ function OrionLib:MakeWindow(WindowConfig)
 				ValueName = "%",
 				Callback = function(Value)
 					VisualPreferences.KeystrokeStrokeVisibility = Value
+					UIState.KeystrokeStrokeVisibility = Value
 					ApplyVisualPreferences()
+					scheduleUIConfigSave()
 				end,
 			})
 
@@ -4881,19 +5174,56 @@ function OrionLib:MakeWindow(WindowConfig)
 				ValueName = "%",
 				Callback = function(Value)
 					VisualPreferences.KeystrokeBackgroundVisibility = Value
+					UIState.KeystrokeBackgroundVisibility = Value
 					KeystrokesFrame.BackgroundTransparency = 1
 					for _, Item in ipairs(OrionLib.Keystrokes) do
 						if Item.Frame and Item.Frame.Parent then
 							Item.Frame.BackgroundTransparency = VisibilityToTransparency(Value)
 						end
 					end
+					scheduleUIConfigSave()
+				end,
+			})
+
+
+			keystrokes:AddSlider({
+				Name = "Key Roundness",
+				Min = 0,
+				Max = 14,
+				Default = VisualPreferences.KeystrokeCornerRadius,
+				Increment = 1,
+				ValueName = "px",
+				Callback = function(Value)
+					VisualPreferences.KeystrokeCornerRadius = Value
+					UIState.KeystrokeCornerRadius = Value
+					for _, Item in ipairs(OrionLib.Keystrokes) do
+						if Item.Corner and Item.Corner.Parent then
+							Item.Corner.CornerRadius = UDim.new(0, Value)
+						end
+					end
+					scheduleUIConfigSave()
+				end,
+			})
+
+			keystrokes:AddSlider({
+				Name = "Pressed Color Strength",
+				Min = 0,
+				Max = 100,
+				Default = VisualPreferences.KeystrokePressedStrength,
+				Increment = 1,
+				ValueName = "%",
+				Callback = function(Value)
+					VisualPreferences.KeystrokePressedStrength = Value
+					UIState.KeystrokePressedStrength = Value
+					OrionLib:SetTheme()
+					scheduleUIConfigSave()
 				end,
 			})
 		end
 
 		background:AddToggle({
 			Name = "Background Blur",
-			Default = false,
+			Default = UIState.BlurEnabled == true,
 			Callback = function(Value)
 				TabFunction:SetBlur(Value)
 			end,
@@ -4903,12 +5233,14 @@ function OrionLib:MakeWindow(WindowConfig)
 			Name = "Blur Strength",
 			Min = 0,
 			Max = 30,
-			Default = 12,
+			Default = UIState.BlurSize,
 			Increment = 1,
 			ValueName = "",
 			Callback = function(Value)
 				BlurSize = Value
+				UIState.BlurSize = Value
 				updateBlur()
+				scheduleUIConfigSave()
 			end,
 		})
 
@@ -4921,7 +5253,9 @@ function OrionLib:MakeWindow(WindowConfig)
 			ValueName = "%",
 			Callback = function(Value)
 				VisualPreferences.StrokeVisibility = Value
+				UIState.StrokeVisibility = Value
 				ApplyVisualPreferences()
+				scheduleUIConfigSave()
 			end,
 		})
 
@@ -4934,7 +5268,9 @@ function OrionLib:MakeWindow(WindowConfig)
 			ValueName = "%",
 			Callback = function(Value)
 				VisualPreferences.SeparatorVisibility = Value
+				UIState.SeparatorVisibility = Value
 				ApplyVisualPreferences()
+				scheduleUIConfigSave()
 			end,
 		})
 
@@ -4942,12 +5278,14 @@ function OrionLib:MakeWindow(WindowConfig)
 			Name = "Border Thickness",
 			Min = 0,
 			Max = 3,
-			Default = 1.5,
+			Default = UIState.BorderThickness,
 			Color = Color3.fromRGB(59, 122, 179),
 			Increment = 0.1,
 			ValueName = "Thickness",
 			Callback = function(Value)
 				mainWindowStroke.Thickness = Value
+				UIState.BorderThickness = Value
+				scheduleUIConfigSave()
 			end,
 		})
 
@@ -4960,7 +5298,78 @@ function OrionLib:MakeWindow(WindowConfig)
 			ValueName = "px",
 			Callback = function(Value)
 				VisualPreferences.CornerRadius = Value
+				UIState.CornerRadius = Value
 				ApplyCornerRadius()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		topbar_info:AddToggle({
+			Name = "Show FPS",
+			Default = UIState.ShowFPS == true,
+			Callback = function(Value)
+				UIState.ShowFPS = Value == true
+				updateLocalInfoText()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		topbar_info:AddToggle({
+			Name = "Show Ping",
+			Default = UIState.ShowPing == true,
+			Callback = function(Value)
+				UIState.ShowPing = Value == true
+				updateLocalInfoText()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		topbar_info:AddToggle({
+			Name = "Show Clock",
+			Default = UIState.ShowClock == true,
+			Callback = function(Value)
+				UIState.ShowClock = Value == true
+				updateLocalInfoText()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		topbar_info:AddToggle({
+			Name = "Show Temperature",
+			Default = UIState.ShowTemperature == true,
+			Callback = function(Value)
+				UIState.ShowTemperature = Value == true
+				updateLocalInfoText()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		topbar_info:AddDropdown({
+			Name = "Temperature Unit",
+			Default = tostring(UIState.TemperatureUnit or "Auto"),
+			Options = {"Auto", "Celsius", "Fahrenheit", "Kelvin"},
+			Callback = function(Value)
+				UIState.TemperatureUnit = tostring(Value)
+				updateLocalInfoText()
+				scheduleUIConfigSave()
+			end,
+		})
+
+		persistence:AddToggle({
+			Name = "Auto Save UI",
+			Default = UIState.AutoSave ~= false,
+			Callback = function(Value)
+				UIState.AutoSave = Value == true
+				-- Force one final write so the disabled state itself is remembered.
+				saveUIConfig(true)
+			end,
+		})
+
+		persistence:AddButton({
+			Name = "Save UI Now",
+			Callback = function()
+				captureWindowGeometry()
+				saveUIConfig(true)
 			end,
 		})
 
@@ -4987,6 +5396,9 @@ function OrionLib:MakeWindow(WindowConfig)
 		})
 
 		LoadThemeCfg(FILE_PATH)
+		updateLocalInfoText()
+		updateBlur()
+		saveUIConfig(false)
     end
 
 	return TabFunction
